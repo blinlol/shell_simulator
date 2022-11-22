@@ -3,14 +3,12 @@
 #include "command_list.c"
 
 
-int EndOfInput=0, EndOfShell=0;
-
-
+int EndOfInput=0, EndOfShell=0, onestr_returnstatus=0;
+char *progname;
 
 void sig_handler(int signum){
-    kill(getpid(), signum);
+    // kill(getpid(), signum);
 }
-
 char* scanstring(){
     /* scan from stdin to dest string */
     int len=0, block=10, blocksize=10;
@@ -31,9 +29,12 @@ char* scanstring(){
         EndOfInput=1;
     }
     dest[len]='\0';
+    for (int i=len;dest[i]==' ' || dest[i]=='\0';i--){
+        if (i<0) break;
+        dest[i]='\0';
+    }
     return dest;
 }
-
 int typeofword(char* word, int len){
     char *tempstr=malloc(MAXLEN*sizeof(char));
     int i, ans;
@@ -45,11 +46,16 @@ int typeofword(char* word, int len){
     else if (strcmp(tempstr, "||")==0) { ans=OR; }
     else if (strcmp(tempstr, "&&")==0) { ans=AND; }
     else if (strcmp(tempstr, "&")==0) { ans=AMPERSAND; }
+    else if (strcmp(tempstr, "<")==0) { ans=LEFT_ARROW; }
+    else if (strcmp(tempstr, ">")==0) { ans=RIGHT_ARROW; }
+    else if (strcmp(tempstr, ">>")==0) { ans=RIGHT_DOUBLE_ARROW; }
+    else if (strcmp(tempstr, ";")==0) { ans=SEMICOLON; }
+    else if (strcmp(tempstr, "(0)")==0) { ans=ZERO_IN_BRACKETS; }
+    else if (strcmp(tempstr, "(1)")==0) { ans=ONE_IN_BRACKETS; }
     else { ans=WORD; }
     free(tempstr);
     return ans;
 }
-
 Command* simplecommandparser(char* str, int len){
     /* parsing str to command name, args and return cmd */
     if (str==NULL || len==0){
@@ -76,7 +82,7 @@ Command* simplecommandparser(char* str, int len){
     int argslen=0;
     char **args=NULL, *arg=NULL;
 
-    args=(char**)realloc(args, (argslen+1)*sizeof(char*));
+    args=(char**)calloc((argslen+3), sizeof(char*));
     args[argslen]=(char*)calloc(MAXLEN, sizeof(char));
     strcpy(args[argslen], name);
     argslen++;
@@ -94,7 +100,7 @@ Command* simplecommandparser(char* str, int len){
         arg[j]='\0';
         while (str[i]==' ' && i<len){ i++; }
         if (strcmp(arg, "")!=0){
-            args=(char**)realloc(args, (argslen+1)*sizeof(char*));
+            args=(char**)realloc(args, (argslen+3)*sizeof(char*));
             args[argslen]=arg;
             argslen++;
         }
@@ -106,7 +112,6 @@ Command* simplecommandparser(char* str, int len){
     Command* cmd=init_cmd(name, args);
     return cmd;
 }
-
 CommandList* commandparser(char *str){
     /* parsing input string to commands and operators, and return CommandList */
     if (str == NULL){
@@ -114,21 +119,129 @@ CommandList* commandparser(char *str){
         return NULL;
     }
 
-    int wordlen=0, cmdstrlen=0, inword=0, incmdstr=0, wordtype;
+    int wordlen=0, cmdstrlen=0, inword=0, incmdstr=0, wordtype, inIOredirect=0;
     char* cmdstr=NULL, *word=NULL;
     CommandList *ans=NULL;
     Command *cmd=NULL;
-    while (*str!='\0'){
-        if (*str==' ' || *str=='\t'){ 
+    int endwhile=0;
+    while (!endwhile){
+        if (*str==' ' || *str=='\t' || *str=='\0'){ 
             if (inword==0 || word==NULL) {}
             else {
                 wordtype=typeofword(word, wordlen);
-                if (wordtype!=WORD){
+                if (inIOredirect){
+                    if (wordlen>0){
+                        cmd=simplecommandparser(cmdstr, cmdstrlen);
+                        set_cmdoperator(cmd, inIOredirect);
+                        ans=add_cmd(ans, cmd);
+                        inIOredirect=0;
+                        cmdstr=NULL;
+                        cmdstrlen=0;
+                    }
+                }
+                else if (wordtype==RIGHT_ARROW || wordtype==LEFT_ARROW || wordtype==RIGHT_DOUBLE_ARROW){
+                    if (cmdstrlen>wordlen){
+                        cmdstrlen-=wordlen;
+                        cmd=simplecommandparser(cmdstr, cmdstrlen);
+                        ans = add_cmd(ans, cmd);
+                    }
+                    cmdstr=NULL;
+                    cmdstrlen=0;
+                    inIOredirect=wordtype;
+                }
+                else if (wordtype==SEMICOLON){
+                    if (cmdstrlen>wordlen){
+                        cmdstrlen-=wordlen;
+                        cmd=simplecommandparser(cmdstr, cmdstrlen);
+                        ans = add_cmd(ans, cmd);
+                    }
+                    cmdstr=NULL;
+                    cmdstrlen=0;
+
+                    char* name=(char*)calloc(MAXLEN, sizeof(char));
+                    char** args=(char**)calloc(1, sizeof(char*));
+                    args[0]=NULL;
+                    cmd=init_cmd(name, args);
+                    set_cmdoperator(cmd, wordtype);
+                    ans=add_cmd(ans, cmd);
+                }
+                else if (wordtype==AMPERSAND){
+                    if (cmdstrlen>wordlen){
+                        cmdstrlen-=wordlen;
+                        cmd=simplecommandparser(cmdstr, cmdstrlen);
+                        ans = add_cmd(ans, cmd);
+                    }
+                    cmdstr=NULL;
+                    cmdstrlen=0;
+
+                    char* name=(char*)calloc(MAXLEN, sizeof(char));
+                    char** args=(char**)calloc(1, sizeof(char*));
+                    args[0]=NULL;
+                    cmd=init_cmd(name, NULL);
+                    set_cmdoperator(cmd, wordtype);
+                    ans=add_cmd(ans, cmd);
+                }
+                
+                else if (wordtype==AND){
+                    if (cmdstrlen>wordlen){
+                        cmdstrlen-=wordlen;
+                        cmd=simplecommandparser(cmdstr, cmdstrlen);
+                        ans = add_cmd(ans, cmd);
+                    }
+                    cmdstr=NULL;
+                    cmdstrlen=0;
+
+                    char* name=(char*)calloc(MAXLEN, sizeof(char));
+                    char** args=(char**)calloc(1, sizeof(char*));
+                    args[0]=NULL;
+                    cmd=init_cmd(name, NULL);
+                    set_cmdoperator(cmd, wordtype);
+                    ans=add_cmd(ans, cmd);
+                }
+                else if (wordtype==OR){
+                    if (cmdstrlen>wordlen){
+                        cmdstrlen-=wordlen;
+                        cmd=simplecommandparser(cmdstr, cmdstrlen);
+                        ans = add_cmd(ans, cmd);
+                    }
+                    cmdstr=NULL;
+                    cmdstrlen=0;
+
+                    char* name=(char*)calloc(MAXLEN, sizeof(char));
+                    char** args=(char**)calloc(1, sizeof(char*));
+                    args[0]=NULL;
+                    cmd=init_cmd(name, NULL);
+                    set_cmdoperator(cmd, wordtype);
+                    ans=add_cmd(ans, cmd);
+                }
+
+                else if (wordtype==ZERO_IN_BRACKETS || wordtype==ONE_IN_BRACKETS){
+                    if (cmdstrlen>wordlen){
+                        cmdstrlen-=wordlen;
+                        cmd=simplecommandparser(cmdstr, cmdstrlen);
+                        ans = add_cmd(ans, cmd);
+                    }
+                    cmdstr=NULL;
+                    cmdstrlen=0;
+
+                    char* name=(char*)calloc(MAXLEN, sizeof(char));
+                    char** args=(char**)calloc(1, sizeof(char*));
+                    args[0]=NULL;
+                    cmd=init_cmd(name, NULL);
+                    set_cmdoperator(cmd, wordtype);
+                    ans=add_cmd(ans, cmd);
+                }
+
+                else if (wordtype!=WORD){
                     cmdstrlen-=wordlen;
                     cmd=simplecommandparser(cmdstr, cmdstrlen);
-                    if (wordtype==AMPERSAND){ set_cmdmode(cmd, BACKGROUND_MODE); }
-                    else { set_cmdoperator(cmd, wordtype); }
-                    
+                    set_cmdoperator(cmd, wordtype); 
+                    ans = add_cmd(ans, cmd);
+                    cmdstr=NULL;
+                    cmdstrlen=0;
+                }
+                else if (wordtype==WORD && *str=='\0'){
+                    cmd=simplecommandparser(cmdstr, cmdstrlen);                    
                     ans = add_cmd(ans, cmd);
                     cmdstr=NULL;
                     cmdstrlen=0;
@@ -149,232 +262,419 @@ CommandList* commandparser(char *str){
             wordlen++;
         }
         if (cmdstr!=NULL){ cmdstrlen++; }
-        str++;
-    }
-
-    if (cmdstr!=NULL){
-        wordtype=-1;
-        if (word!=NULL){ wordtype=typeofword(word, wordlen); }
-        if (wordtype!=WORD && wordtype!=-1) { cmdstrlen-=wordlen; }
-
-        cmd=simplecommandparser(cmdstr, cmdstrlen);
-
-        if (wordtype!=WORD && wordtype!=-1){
-            if (wordtype==AMPERSAND) { set_cmdmode(cmd, BACKGROUND_MODE); }
-            else { set_cmdoperator(cmd, wordtype); }
-        }
-        ans=add_cmd(ans, cmd);
+        if (*str=='\0'){ endwhile=1; }
+        else { str++; } 
     }
 
     return ans;
 }
 
-
-
-
-
-
-int run_cmd(Command *cmd, int *fd_to_close1, int *fd_to_close2){
-    /* fd_to_close - int array, that close in son proccess, 0 - end of array
-       stdin = cmd->input, stdout = cmd->output */
-    
+int run_cmd(Command *cmd, int pipes[][2], int pipeslen, int indclose, int cmdtype){
+    /*cmdtype: fstconv, lastconv, reg 
+      returns childs pid */    
     if (cmd==NULL) { return -1; }
     int chpid, status, i;
     chpid=fork();
     if (chpid==0){
         dup2(cmd->input, DEFAULT_INPUT);  
         dup2(cmd->output, DEFAULT_OUTPUT);
-        if (fd_to_close1!=NULL){
-            for (i=0;fd_to_close1[i]!=0;i++){
-                if (fd_to_close1[i]!=-1) { close(fd_to_close1[i]); }
-            }
-        }
-        if (fd_to_close2!=NULL){
-            for (i=0;fd_to_close2[i]!=0;i++){
-                if (fd_to_close2[i]!=-1) { close(fd_to_close2[i]); }
-            }
-        }
 
+        if (cmdtype==FIRST_CONV_CMD && cmd->input!=DEFAULT_INPUT){ close(cmd->input); }
+        else if (cmdtype==LAST_CONV_CMD && cmd->output!=DEFAULT_OUTPUT){ close(cmd->output); }
+        if (pipes!=NULL){
+            for (i=0;i<pipeslen;i++){
+                close(pipes[i][0]); 
+                close(pipes[i][1]); 
+            }
+        }
         execvp(cmd->name, cmd->args);
     }
-    else{
-        waitpid(chpid, NULL, 0);
+    else {
+        if (cmdtype==FIRST_CONV_CMD && cmd->input!=DEFAULT_INPUT){ close(cmd->input); }
+        else if (cmdtype==LAST_CONV_CMD && cmd->output!=DEFAULT_OUTPUT){ close(cmd->output); }
+        if (pipes!=NULL && indclose>0){
+            close(pipes[indclose-1][0]);
+        }
+        if (pipes!=NULL && indclose<pipeslen){
+            close(pipes[indclose][1]);
+        }
+        return chpid;
     }
 }
 
-int run_cmdlist(CommandList *cmdlist){
-    CommandList *cur=cmdlist,  *convstart=NULL, *convend=NULL, *curconv=NULL;
-    Command *cmd=NULL, *nextcmd=NULL;
-    int pipes[3], inconveyor=0, cmdreturn, convlen=0, i;
+int run_conveyor(CommandList* startConv, CommandList* endConv){
+    /* conveyor - [startConv, endConv] 
+    0 - success, 1 - fail */
+    CommandList *curentConv=startConv;
+    Command* cmd;
+    if (endConv!=NULL){
+        endConv=endConv->nextcmd;
+    }
 
-/* find io redirect */
-/* find &, () */
+    int convlen=0;
+    while (curentConv!=endConv){
+        convlen++;
+        curentConv=curentConv->nextcmd;
+    }
+    
+    int pipes[convlen-1][2];
+    curentConv=startConv;
+    for (int i=0;i<convlen-1;i++){
+        pipe(pipes[i]);
+        if (curentConv!=NULL){
+            cmd=curentConv->cmd;
+            if (cmd!=NULL){
+                cmd->output=pipes[i][1];
+            }
+            if (curentConv->nextcmd!=NULL && curentConv->nextcmd->cmd!=NULL){
+                cmd=curentConv->nextcmd->cmd;
+                cmd->input=pipes[i][0];
+            }
+            curentConv=curentConv->nextcmd;
+        }
+    }
 
-    while (cur!=NULL){
-        if (cur->cmd!=NULL){
-            cmd=cur->cmd;
-            if (cur->nextcmd!=NULL){ 
-                nextcmd=cur->nextcmd->cmd; 
+    curentConv=startConv; 
+    int i=0, cmdtype=REGULAR_CMD, pids[convlen];
+    while (curentConv!=endConv && curentConv!=NULL){
+        if (curentConv==startConv) { cmdtype=FIRST_CONV_CMD; }
+        else if (curentConv->nextcmd==endConv) { cmdtype=LAST_CONV_CMD; }
+        else { cmdtype=REGULAR_CMD; }
+        cmd=curentConv->cmd;
+        pids[i]=run_cmd(cmd, pipes, convlen-1, i, cmdtype);
+        i++;
+        curentConv=curentConv->nextcmd;
+    }
+
+    int status, child;
+    for (i=0;i<convlen;i++){
+        child=wait(&status);
+        if (child==pids[convlen-1]){
+            if (WIFEXITED(status) && WEXITSTATUS(status)==0){
+                return 0;
             }
-            if (inconveyor==0 && cmd->operator!=CONVEYOR){
-                cmdreturn = run_cmd(cmd, NULL, NULL);
-            }
-            else if (inconveyor==0 && cmd->operator==CONVEYOR){
-                convstart=cur;
-                convend=cur;
-                inconveyor=1;
-                pipe(pipes);
-                set_cmdoutput(cmd, pipes[1]);
-                set_cmdinput(nextcmd, pipes[0]);
-                convlen++;
-            }
-            else if (inconveyor==1 && cmd->operator==CONVEYOR){
-                convend=cur;
-                set_cmdoutput(cmd, pipes[1]);
-                set_cmdinput(nextcmd, pipes[0]);
-                convlen++;
-            }
-            else if (inconveyor==1 && cmd->operator!=CONVEYOR){
-                curconv=convstart;
-                i=0;
-                while (curconv!=NULL && curconv!=convend){
-                    if (i==0 && curconv->cmd!=NULL) { 
-                        cmdreturn = run_cmd(curconv->cmd, pipes, NULL); }                    
-                    else if (curconv->cmd!=NULL){ 
-                        cmdreturn = run_cmd(curconv->cmd, pipes, NULL); }
-                    curconv=curconv->nextcmd;
-                }
-                if (curconv->cmd!=NULL){ 
-                    cmdreturn = run_cmd(curconv->cmd, pipes, NULL); }
-                inconveyor=0;
-                convend=NULL; convstart=NULL; 
-                close(pipes[0]); close(pipes[1]);
-                pipes[0]=-1; pipes[1]=-1;
-                convlen=0;    
+            else{
+                return 1;
             }
         }
-        cur=cur->nextcmd;
+    }
+
+}
+
+int redirection(Command* io, Command* start, Command* end){
+    if (io==NULL || start==NULL || end==NULL){ return -1; }
+    if (io->operator==LEFT_ARROW){
+        int fd=open(io->name, O_RDONLY);
+        if (fd==-1){
+            perror("No such file");
+            return -1;
+        }
+        set_cmdinput(start, fd);
+    }
+    else if (io->operator==RIGHT_ARROW || RIGHT_DOUBLE_ARROW){
+        int fd=-1;
+        if (io->operator==RIGHT_ARROW){
+            fd=open(io->name, O_WRONLY | O_CREAT | O_TRUNC, 0777);
+        }
+        else if (io->operator==RIGHT_DOUBLE_ARROW){
+            fd=open(io->name, O_WRONLY | O_APPEND, 0777);
+        }
+        if (fd==-1){
+            perror("error with file");
+            return -1;
+        }
+        set_cmdoutput(end, fd);
+    }
+    else { return -1; }
+    return 0;
+}
+CommandList* set_list_ioredirect(CommandList *cmdlist){
+    CommandList *cur=cmdlist, *start=NULL, *end=NULL, *ans=cmdlist;
+    Command* iredirect=NULL, *oredirect=NULL, *cmd=NULL;
+
+    while (cur!=NULL){
+        cmd=cur->cmd;
+        if (cmd!=NULL){
+            if (cmd->operator==RIGHT_ARROW || cmd->operator==RIGHT_DOUBLE_ARROW){
+                oredirect=cmd;
+            }
+            else if (cmd->operator==LEFT_ARROW){
+                iredirect=cmd;
+            }
+            else if (cmd->operator==AMPERSAND || cmd->operator==OR || cmd->operator==AND || cmd->operator==SEMICOLON){
+                if (iredirect!=NULL && start!=NULL && end!=NULL){
+                    redirection(iredirect, start->cmd, end->cmd);
+                }
+                if (oredirect!=NULL && start!=NULL && end!=NULL){
+                    redirection(oredirect, start->cmd, end->cmd);
+                }
+                start=NULL;
+                end=NULL;
+                iredirect=NULL;
+                oredirect=NULL;
+            }
+
+            else {
+                if (start==NULL){ 
+                    start=cur;
+                    end=cur;
+                }
+                else {
+                    end=cur;
+                }
+            }
+        }
+        cur=cur->nextcmd; 
     }
     
-
-
-
-    // while (cur!=NULL){
-    //     if (cur->cmd!=NULL){
-    //         cmd=cur->cmd;
-    //         if (cur->nextcmd!=NULL){ 
-    //             nextcmd=cur->nextcmd->cmd; 
-    //         }
-    //         if (inconveyor==0 && cmd->operator!=CONVEYOR){
-    //             cmdreturn = run_cmd(cmd, NULL, NULL);
-    //         }
-    //         else if (inconveyor==0 && cmd->operator==CONVEYOR){
-    //             convstart=cur;
-    //             convend=cur;
-    //             inconveyor=1;
-    //             pipe(pipes[convlen]);
-    //             set_cmdoutput(cmd, pipes[convlen][1]);
-    //             set_cmdinput(nextcmd, pipes[convlen][0]);
-    //             convlen++;
-    //         }
-    //         else if (inconveyor==1 && cmd->operator==CONVEYOR){
-    //             convend=cur;
-    //             set_cmdoutput(cmd, pipes[convlen][1]);
-    //             set_cmdinput(nextcmd, pipes[convlen][0]);
-    //             convlen++;
-    //         }
-    //         else if (inconveyor==1 && cmd->operator!=CONVEYOR){
-    //             curconv=convstart;
-    //             i=0;
-    //             while (curconv!=NULL && curconv!=convend){
-    //                 if (i==0 && curconv->cmd!=NULL) { 
-    //                     cmdreturn = run_cmd(curconv->cmd, pipes[i], NULL); }                    
-    //                 else if (curconv->cmd!=NULL){ 
-    //                     cmdreturn = run_cmd(curconv->cmd, pipes[i-1], pipes[i]); }
-    //                 curconv=curconv->nextcmd;
-    //             }
-    //             if (curconv->cmd!=NULL){ 
-    //                 cmdreturn = run_cmd(curconv->cmd, pipes[i-1], NULL); }
-    //             inconveyor=0;
-    //             convend=NULL; convstart=NULL; 
-    //             for (i=0;i<convlen;i++){
-    //                 close(pipes[i][0]); close(pipes[i][1]);
-    //                 pipes[i][0]=-1; pipes[i][1]=-1;
-    //             }
-    //             convlen=0;    
-    //         }
-    //     }
-    //     cur=cur->nextcmd;
-    // }
+    if (iredirect!=NULL && start!=NULL && end!=NULL){
+        redirection(iredirect, start->cmd, end->cmd);
+    }
+    if (oredirect!=NULL && start!=NULL && end!=NULL){
+        redirection(oredirect, start->cmd, end->cmd);
+    }
     
+    ans=del_cmds_with_operator(cmdlist, RIGHT_ARROW);
+    ans=del_cmds_with_operator(ans, LEFT_ARROW);
+    ans=del_cmds_with_operator(ans, RIGHT_DOUBLE_ARROW);
+    return ans;
+}
 
-    
+
+CommandList* run_cmdlist(CommandList *cmdlist){
+    CommandList *cur;
+    Command *cmd=NULL, *nextcmd=NULL;
+
+    cmdlist=set_list_ioredirect(cmdlist);
+    CommandList *startConv=NULL, *endConv=NULL;
+    cur=cmdlist;
+    int inconveyor=0, cmdret=-1;
+    while (cur!=NULL){
+        cmd=cur->cmd;
+        if (cmd==NULL){
+            perror("NULL cmd");
+            cur=cur->nextcmd;
+            continue;
+        }
+
+        int check = cmd->operator==AND && cmdret==1 || cmd->operator==OR && cmdret==0;
+        if (check){
+            while (cur!=NULL && cur->cmd!=NULL && cur->cmd->operator!=SEMICOLON){
+                cur=cur->nextcmd;
+            }
+            cmdret=-1;
+            inconveyor=0;
+            startConv=NULL;
+            endConv=NULL;
+            continue;
+        }
+        else if (cmd->operator==ZERO_IN_BRACKETS){
+            cmdret=0;
+            inconveyor=0;
+            startConv=NULL;
+            endConv=NULL;
+        }
+        else if (cmd->operator==ONE_IN_BRACKETS){
+            cmdret=1;
+            inconveyor=0;
+            startConv=NULL;
+            endConv=NULL;
+        }
+        else if (cmd->operator==OR || cmd->operator==AND){  }
+        else if (cmd->operator==SEMICOLON){
+            cmdret=-1;
+        }
+        else if (!inconveyor && cmd->operator==CONVEYOR){
+            inconveyor=1;
+            startConv=cur;
+        }
+        else if (inconveyor && cmd->operator==NOOPERATOR){
+            endConv=cur;
+            cmdret = run_conveyor(startConv, endConv);
+            inconveyor=0;
+            startConv=NULL;
+            endConv=NULL;
+        }
+        else if (!inconveyor){
+            cmdret = run_conveyor(cur, cur);
+        }
+// print_cmd(cmd);
+// printf("\n%d\n", getpid());
 
 
-    // while (cur!=NULL){
-    //     if (cur->cmd!=NULL){
-    //         cmd=cur->cmd;
-    //         if (cur->nextcmd!=NULL){ 
-    //             nextcmd=cur->nextcmd->cmd; 
-    //         }
-    //         if (cmd->operator==CONVEYOR){
-    //             if (inconveyor==0){
-    //                 inconveyor=1;
-    //                 convstart=cur;
-    //                 convend=cur;
-    //                 pipe(pipes);
-    //             }
-    //             set_cmdoutput(cmd, pipes[1]);
-    //             if (nextcmd!=NULL){ set_cmdinput(nextcmd, pipes[0]); }
-    //             // run_cmd(cmd, pipes);
-    //         }
-    //         else if (inconveyor==1){
-    //             /* run conveyor */
-    //             curconv=convstart;
-    //             while (curconv!=NULL && curconv!=convend){
-    //                 if (curconv->cmd!=NULL){ run_cmd(curconv->cmd, pipes); }
-    //                 curconv=curconv->nextcmd;
-    //             }
-    //             if (curconv->cmd!=NULL){ run_cmd(curconv->cmd, pipes); }
-    //             inconveyor=0;
-    //             convend=NULL; convstart=NULL; 
-    //             close(pipes[0]); close(pipes[1]);
-    //             pipes[0]=-1; pipes[1]=-1;
-    //         }
-    //         else { 
-    //             run_cmd(cmd, pipes);
-    //         }
-    //     }
-    //     cur=cur->nextcmd;
-    // }
+        cur=cur->nextcmd;
+    }
+    onestr_returnstatus=cmdret;
+    return cmdlist;
 }
 
 
 
 
 
-int main(int argc, char **argv){
-    signal(SIGINT, sig_handler);
+
+int run_bgmain(char* str, int start, int end){
+    /* str[start, end-1] */
+    pid_t chpid=fork();
+    if (chpid==0){
+        if (fork()==0){
+            signal(SIGINT, SIG_IGN);
+            int fdpipe[2];
+            pipe(fdpipe);
+            write(fdpipe[1], str+start, (end-start)*sizeof(char));
+            close(fdpipe[1]);
+
+            dup2(fdpipe[0], DEFAULT_INPUT);
+            close(fdpipe[0]);
+            
+            execlp(progname, progname, "--one-str", NULL);
+            exit(1);
+        }
+        exit(0);
+    }
+    int status;
+    waitpid(chpid, &status, 0);
+    if (WIFEXITED(status) && WEXITSTATUS(status)==0){
+        return 0;
+    }
+    else{
+        return 1;
+    }
+}
+char* make_background(char* str){
+    int istart=0, ibg=-1, i;
+    for (i=0;i<strlen(str);i++){
+        if (str[i]==';'){
+            istart=i+1;
+        }
+        else if (str[i]=='&' && str[i+1]!='&' && str[i-1]!='&'){
+            ibg=i;
+            run_bgmain(str, istart, ibg);
+        }
+    }
+    istart=0; ibg=-1;
+    for (i=0;i<strlen(str);i++){
+        if (str[i]=='&' && str[i+1]!='&' && str[i-1]!='&'){
+            char* temp = (char*)calloc(MAXLEN, sizeof(char));
+            temp=strcpy(temp, str+i+1);
+            str[istart]='\0';
+            str=strcat(str, temp);
+            free(temp);
+        }
+        else if (str[i]==';'){
+            istart=i;
+        }
+    }
+    return str;
+}
+
+
+int run_bracketsmain(char* str, int start, int end){
+    /* str[start, end-1] */
+    pid_t chpid=fork();
+    if (chpid==0){
+        // signal(SIGINT, SIG_IGN);
+        int fdpipe[2];
+        pipe(fdpipe);
+        write(fdpipe[1], str+start, (end-start)*sizeof(char));
+        close(fdpipe[1]);
+
+        dup2(fdpipe[0], DEFAULT_INPUT);
+        close(fdpipe[0]);
+            
+        execlp(progname, progname, "--one-str", NULL);
+        exit(1);
+    }
+    int status;
+    waitpid(chpid, &status, 0);
+    if (WIFEXITED(status) && WEXITSTATUS(status)==0){
+        return 0;
+    }
+    else{
+        return 1;
+    }
+}
+char* make_brackets(char* str){
+    int start=-1, opencount=0;
+    for (int i=0;i<strlen(str);i++){
+        if (str[i]=='('){
+            opencount++;
+            if (start==-1){
+                start=i;
+            }
+        }
+        else if (str[i]==')'){
+            opencount--;
+        }
+        if (opencount==0 && start!=-1){
+            /* inbrackets=[start+1:i-1] */
+            int status = run_bracketsmain(str, start+1, i);
+            char* temp = (char*)calloc(MAXLEN, sizeof(char));
+            temp=strcpy(temp, str+i);
+            if (status==0){
+                str[start+1]='0';
+            }
+            else {
+                str[start+1]='1';
+            }
+            str[start+2]='\0';
+            str=strcat(str, temp);
+            free(temp);
+            i=start+2;
+            start=-1;
+        }
+    }
+    return str;
+}
+
+
+
+void onestr_mode(){
     char *inpstr=NULL;
     CommandList *list=NULL;
-    
+    inpstr = scanstring();
+    if (inpstr==NULL){ EndOfInput=1; }
+        
+    if (inpstr!=NULL){
+        list=commandparser(inpstr);
+// print_cmdlist(list);
+        list=run_cmdlist(list);
+// print_cmdlist(list);
+        free_cmdlist(list);
+    }
+    if (inpstr!=NULL) free(inpstr); 
+    exit(onestr_returnstatus);
+}
+
+int main(int argc, char** argv){
+    progname=argv[0];
+    if (argc>1){
+        if (strcmp(argv[1], "--one-str")==0){
+            onestr_mode();
+            exit(0);
+        }
+    }
+
+    // signal(SIGINT, sig_handler);
+    char *inpstr=NULL;
+    CommandList *list=NULL;
+
     while (!EndOfShell){
-        printf(">>");
+        printf(">> ");
         inpstr = scanstring();
         if (inpstr==NULL){ EndOfInput=1; }
         if (EndOfInput){ EndOfShell=1; }
         
         if (inpstr!=NULL && !EndOfShell){
+            inpstr=make_background(inpstr);
+            inpstr=make_brackets(inpstr);
             list=commandparser(inpstr);
-
-            run_cmdlist(list);
-            // int a[3]={-1, -1, 0};
-            // run_cmd(list->cmd, a);
-
-            free(inpstr);
+// print_cmdlist(list);
+            list=run_cmdlist(list);
+// print_cmdlist(list);
             free_cmdlist(list);
         }
-        
+        if (inpstr!=NULL) free(inpstr);
     }
 
  

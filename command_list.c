@@ -87,13 +87,14 @@ CommandList* pop_cmd(CommandList *list, Command *cmd){
     cmd->output=list->cmd->output;
     CommandList* temp=list;
     list=list->nextcmd;
-    free(temp);
+    if (temp!=NULL) free(temp);
     return list;
 }
 
 void print_cmd(Command *cmd){
-    printf("%s~", cmd->name);
-    for (int i=0; cmd->args[i]!=NULL;i++){
+    if (cmd==NULL) return;
+    if (cmd->name!=NULL) printf("%s~", cmd->name);
+    for (int i=0; cmd->args!=NULL && cmd->args[i]!=NULL;i++){
         printf("%s,", cmd->args[i]);
     }
     printf("~");
@@ -119,11 +120,11 @@ void free_cmd(Command* cmd){
     char** args=cmd->args, **temp;
     int i;
 
-    if (cmd->args!=NULL){
-        for (i=0;cmd->args[i]!=NULL;i++){
-            free(cmd->args[i]);
+    if (args!=NULL){
+        for (i=0;args[i]!=NULL;i++){
+            free(args[i]);
         }
-        free(cmd->args);
+        free(args);
     }
 
     free(cmd);    
@@ -135,8 +136,52 @@ void free_cmdlist(CommandList *list){
         free_cmd(list->cmd);
         temp=list;
         list=list->nextcmd;
-        free(temp);
+        if (temp!=NULL) free(temp);
     }
 }
 
+CommandList* del_cmds_with_operator(CommandList* list, int op){
+    CommandList *cur=list, *prev=NULL, *head=list;
+    while (cur!=NULL){
+        if (cur->cmd!=NULL && cur->cmd->operator==op){
+            if (prev==NULL){
+                head=cur->nextcmd;
+                free_cmd(cur->cmd);
+                free(cur);
+                cur=head;
+            }
+            else{
+                prev->nextcmd=cur->nextcmd;
+                free_cmd(cur->cmd);
+                free(cur);
+                cur=prev->nextcmd;
+            }
+        }
+        else{
+            prev=cur;
+            cur=cur->nextcmd;
+        }
+    }
+    return head;
+}
 
+CommandList* del_cmds_from_to(CommandList* list, CommandList* start, CommandList* end){
+    if (list==NULL || start==NULL || end==NULL){
+        return NULL;
+    }
+   
+    CommandList *cur=list, *prev=NULL, *head=list;
+    while (cur!=start && cur!=NULL){
+        prev=cur;
+        cur=cur->nextcmd;
+    }
+    if (prev==NULL){
+        head=end->nextcmd;
+    }
+    else {
+        prev->nextcmd=end->nextcmd;
+    }
+    end->nextcmd=NULL;
+    free_cmdlist(start);
+    return head;
+}
