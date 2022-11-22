@@ -10,10 +10,12 @@
 #include <sys/wait.h>
 #include <errno.h>
 
-#define MAXLEN 128
+#define MAXLEN 256
 
 #define DEFAULT_MODE 20
 #define BACKGROUND_MODE 21
+#define ZERO_MODE 22
+#define ONE_MODE 23
 
 #define NOOPERATOR 30
 
@@ -27,6 +29,14 @@
 #define RIGHT_DOUBLE_ARROW 7
 #define LEFT_ARROW 8
 
+#define ZERO_IN_BRACKETS 9
+#define ONE_IN_BRACKETS 10
+
 #define DEFAULT_INPUT 0
 #define DEFAULT_OUTPUT 1
 #define DEFAULT_ERROR 2
+
+#define REGULAR_CMD 0
+#define FIRST_CONV_CMD 41
+#define LAST_CONV_CMD 42
+
