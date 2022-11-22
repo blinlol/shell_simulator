@@ -21,3 +21,4 @@ Project structure:
 1. main.c is the main shellsim file, which handles users input, parses string to commands and executes them in the correct order
 2. command_list.c
 3. types.c and derectives.c
+
